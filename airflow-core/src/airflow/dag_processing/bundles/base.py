@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-import fcntl
+import portalocker
 import logging
 import os
 import shutil
@@ -27,7 +27,6 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import timedelta
-from fcntl import LOCK_SH, LOCK_UN, flock
 from operator import attrgetter
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -167,7 +166,7 @@ class BundleUsageTrackingManager:
         try:
             log_info("removing stale bundle.")
             with open(info.lock_file_path, "a") as f:
-                flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)  # exclusive lock, do not wait
+                portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)  # exclusive lock, do not wait
                 # remove the actual bundle copy
                 shutil.rmtree(bundle_version_path)
                 # remove the lock file
@@ -381,12 +380,12 @@ class BaseDagBundle(ABC):
 
         with open(lock_file_path, "w") as lock_file:
             # Exclusive lock - blocks until it is available
-            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            portalocker.lock(lock_file, portalocker.LOCK_EX)
             try:
                 self._locked = True
                 yield
             finally:
-                fcntl.flock(lock_file, LOCK_UN)
+                portalocker.lock(lock_file, portalocker.LOCK_UN)
                 self._locked = False
 
     def __repr__(self):
@@ -442,11 +441,11 @@ class BundleVersionLock:
         if TYPE_CHECKING:
             assert self.lock_file_path
         self.lock_file = open(self.lock_file_path)
-        flock(self.lock_file, LOCK_SH)
+        portalocker.lock(self.lock_file, portalocker.LOCK_SH)
 
     def release(self):
         if self.lock_file:
-            flock(self.lock_file, LOCK_UN)
+            portalocker.lock(self.lock_file, portalocker.LOCK_UN)
             self.lock_file.close()
             self.lock_file = None
 
