@@ -31,7 +31,6 @@ from time import sleep, time
 import psutil
 
 from airflow import settings
-from airflow.cli.commands.daemon_utils import run_command_with_daemon_option
 from airflow.cli.simple_table import AirflowConsole
 from airflow.providers.common.compat.sdk import conf
 from airflow.providers.edge3.cli.dataclasses import MaintenanceMarker, WorkerStatus
@@ -102,13 +101,30 @@ def _launch_worker(args):
     asyncio.run(edge_worker.start())
 
 
+def _run_command_with_daemon_option(*args, **kwargs):
+    try:
+        from airflow.cli.commands.daemon_utils import run_command_with_daemon_option
+
+        run_command_with_daemon_option(*args, **kwargs)
+    except ImportError:
+        if kwargs["args"].daemon:
+            raise SystemExit("Error: Daemon mode is not supported when the daemon package can not be imported.")
+        from airflow.utils.cli import sigint_handler, sigquit_handler
+        signal.signal(signal.SIGINT, sigint_handler)
+        signal.signal(signal.SIGTERM, sigint_handler)
+        if hasattr(signal, 'SIGQUIT'):
+          # win32 doesn't support SIGQUIT
+          signal.signal(signal.SIGQUIT, sigquit_handler)
+        kwargs["callback"]()
+
+
 @cli_utils.action_cli(check_db=False)
 @providers_configuration_loaded
 def worker(args):
     """Start Airflow Edge Worker."""
     umask = args.umask or conf.get("edge", "worker_umask", fallback=settings.DAEMON_UMASK)
 
-    run_command_with_daemon_option(
+    _run_command_with_daemon_option(
         args=args,
         process_name=EDGE_WORKER_PROCESS_NAME,
         callback=lambda: _launch_worker(args),
